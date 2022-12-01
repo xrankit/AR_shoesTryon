@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en-us">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+  <title>DeepAR</title>
+  <style>
+    canvas.deepar {
+      border: 0px none;
+      background-color: black;
+      display: block;
+      margin: auto;
+      -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+    }
+
+    body {
+      margin: 0px;
+      padding: 0px;
+      background-color: black;
+    }
+
+    #loader-wrapper {
+      position: fixed;
+      top: 0px;
+      left: 0px;
+      width: 100%;
+      height: 100%;
+      background-color: black;
+    }
+
+    .center {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+      font-family: Helvetica, Arial, sans-serif;
+      color: white;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas class="deepar" id="deepar-canvas" oncontextmenu="event.preventDefault()"></canvas>
+  <div id="loader-wrapper">
+    <div class="center">Loading...</div>
+  </div>
+
+  <script type="text/javascript" src="lib/js/deepar.js"></script>
+  <script type="text/javascript">
+
+    var canvasHeight = window.innerHeight;
+    var canvasWidth = window.innerWidth;
+
+    // desktop, the width of the canvas is 0.66 * window height and on mobile it's fullscreen
+    if (window.innerWidth > window.innerHeight) {
+      canvasWidth = Math.floor(window.innerHeight * 0.66);
+    }
+
+    let canvas = document.getElementById('deepar-canvas');
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+
+    var iosDetected = getMobileOperatingSystem() === 'iOS';
+
+    var deepAR = new DeepAR({
+      licenseKey: '5de592d288a70b53450ba37216e775d84944e413f368d5f45aa1e18bdc4a68dc9af482573d4834a4',
+      canvas: canvas,
+      footTrackingConfig: {
+        poseEstimationWasmPath: 'lib/wasm/libxzimgPoseEstimation.wasm',
+        detectorPath: iosDetected ? 'lib/models/foot/foot-detector-ios.bin' : 'lib/models/foot/foot-detector-android.bin',
+        trackerPath: iosDetected ? 'lib/models/foot/foot-tracker-ios.bin' : 'lib/models/foot/foot-tracker-android.bin',
+        objPath: 'lib/models/foot/foot-model.obj',
+      },
+      deeparWasmPath: 'lib/wasm/deepar.wasm',
+      callbacks: {
+        onInitialize: function () {
+          startExternalVideo('environment');
+            deepAR.switchEffect(0, 'mask', './effects/Shoe_PBR', function () {
+              var loaderWrapper = document.getElementById('loader-wrapper');
+              loaderWrapper.style.display = 'none';
+            });
+          
+        }
+      }
+    });
+
+    deepAR.callbacks.onCameraPermissionAsked = function () {
+      console.log('camera permission asked');
+    };
+
+    deepAR.callbacks.onCameraPermissionGranted = function () {
+      console.log('camera permission granted');
+    };
+
+    deepAR.callbacks.onCameraPermissionDenied = function () {
+      console.log('camera permission denied');
+    };
+
+    deepAR.callbacks.onScreenshotTaken = function (photo) {
+      console.log('screenshot taken');
+    };
+
+    deepAR.callbacks.onVideoStarted = function () {
+      console.log('video started');
+    };
+
+    deepAR.callbacks.onError = function(err) {
+      console.log(err);
+    }
+
+    // Store video objects for cleanup
+    var videoObjects = {};
+
+    function startExternalVideo(facingMode) {
+      cleanupVideoObjects();
+      // create video element
+      var video = document.createElement('video');
+      video.muted = true;
+      video.loop = true;
+      video.controls = true;
+      video.setAttribute('playsinline', 'playsinline');
+      video.style.width = '100%';
+      video.style.height = '100%';
+
+      // put it somewhere in the DOM
+      var videoContainer = document.createElement('div');
+      videoContainer.appendChild(video);
+      videoContainer.style.width = '1px';
+      videoContainer.style.height = '1px';
+      videoContainer.style.position = 'absolute';
+      videoContainer.style.top = '0px';
+      videoContainer.style.left = '0px';
+      videoContainer.style['z-index'] = '-1';
+      document.body.appendChild(videoContainer);
+
+      videoObjects.videoContainer = videoContainer;
+      videoObjects.video = video;
+
+      navigator.mediaDevices.getUserMedia({ video: { facingMode } }).then(function (stream) {
+        try {
+          video.srcObject = stream;
+        } catch (error) {
+          video.src = URL.createObjectURL(stream);
+        }
+        setTimeout(function () {
+          video.play();
+        }, 50);
+      }).catch(function (error) {
+        console.log('error in video play:', error);
+      });
+
+      // tell the DeepAR SDK about our new video element
+      deepAR.setVideoElement(video, facingMode === 'user');
+    }
+
+    function cleanupVideoObjects() {
+      if (videoObjects.length > 0) {
+        videoObjects.videoContainer.parentNode.removeChild(videoObjects.videoContainer);
+        videoObjects.videoContainer = null;
+        if (videoObjects.video.srcObject) {
+          //getUserMedia starts a stream, all tracks on all streams need to be stoppedbefore calling getUserMedia again
+          videoObjects.video.srcObject.getTracks().forEach(track => track.stop())
+        }
+        videoObjects.video.pause();
+        videoObjects = {};
+      }
+    }
+
+    // https://stackoverflow.com/a/21742107
+    function getMobileOperatingSystem() {
+        var userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+        // Windows Phone must come first because its UA also contains "Android"
+        if (/windows phone/i.test(userAgent)) {
+            return 'Windows Phone';
+        }
+
+        if (/android/i.test(userAgent)) {
+            return 'Android';
+        }
+
+        // iOS detection from: http://stackoverflow.com/a/9039885/177710
+        if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
+            return 'iOS';
+        }
+
+        return 'unknown';
+    }
+  </script>
+</body>
+
+</html>
